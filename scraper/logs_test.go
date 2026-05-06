@@ -32,11 +32,34 @@ func TestNewLogs_WithOptions(t *testing.T) {
 	want := errors.New("my_error")
 	mp, err := NewLogs(newTestScrapeLogsFunc(nil),
 		WithStart(func(context.Context, component.Host) error { return want }),
-		WithShutdown(func(context.Context) error { return want }))
+		WithShutdown(func(context.Context) error { return want }),
+		WithReload(func(context.Context, component.Config) error { return want }))
 	require.NoError(t, err)
 
 	assert.Equal(t, want, mp.Start(context.Background(), componenttest.NewNopHost()))
 	assert.Equal(t, want, mp.Shutdown(context.Background()))
+	r, ok := mp.(component.Reloader)
+	require.True(t, ok)
+	assert.Equal(t, want, r.Reload(context.Background(), nil))
+}
+
+func TestNewLogs_Reloader(t *testing.T) {
+	mp, err := NewLogs(newTestScrapeLogsFunc(nil),
+		WithReload(func(context.Context, component.Config) error { return nil }))
+	require.NoError(t, err)
+
+	r, ok := mp.(component.Reloader)
+	require.True(t, ok)
+	require.NoError(t, r.Reload(context.Background(), nil))
+}
+
+func TestNewLogs_ReloadNilFunc(t *testing.T) {
+	mp, err := NewLogs(newTestScrapeLogsFunc(nil))
+	require.NoError(t, err)
+
+	r, ok := mp.(component.Reloader)
+	require.True(t, ok)
+	require.NoError(t, r.Reload(context.Background(), nil))
 }
 
 func TestNewLogs_NilRequiredFields(t *testing.T) {

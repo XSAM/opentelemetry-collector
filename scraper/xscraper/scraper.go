@@ -40,9 +40,17 @@ func WithShutdown(shutdown component.ShutdownFunc) Option {
 	})
 }
 
+// WithReload sets the function that will be called on configuration reload.
+func WithReload(reload component.ReloadFunc) Option {
+	return scraperOptionFunc(func(o *baseScraper) {
+		o.ReloadFunc = reload
+	})
+}
+
 type baseScraper struct {
 	component.StartFunc
 	component.ShutdownFunc
+	component.ReloadFunc
 }
 
 // newBaseScraper returns the internal settings starting from the default and applying all options.

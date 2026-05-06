@@ -83,6 +83,23 @@ func (f ShutdownFunc) Shutdown(ctx context.Context) error {
 	return f(ctx)
 }
 
+// Reloader is an optional interface that a Component may implement to support
+// in-place configuration updates without a full stop/start cycle.
+type Reloader interface {
+	Reload(ctx context.Context, cfg Config) error
+}
+
+// ReloadFunc specifies the function invoked when a component's configuration is being reloaded.
+type ReloadFunc func(context.Context, Config) error
+
+// Reload reloads the component with the new configuration.
+func (f ReloadFunc) Reload(ctx context.Context, cfg Config) error {
+	if f == nil {
+		return nil
+	}
+	return f(ctx, cfg)
+}
+
 // Kind represents component kinds.
 type Kind struct {
 	name string

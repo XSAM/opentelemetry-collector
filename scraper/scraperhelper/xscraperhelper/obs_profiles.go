@@ -81,5 +81,9 @@ func wrapObsProfiles(sc xscraper.Profiles, receiverID, scraperID component.ID, s
 		return md, err
 	}
 
-	return xscraper.NewProfiles(scraperFuncs, xscraper.WithStart(sc.Start), xscraper.WithShutdown(sc.Shutdown))
+	opts := []xscraper.Option{xscraper.WithStart(sc.Start), xscraper.WithShutdown(sc.Shutdown)}
+	if r, ok := sc.(component.Reloader); ok {
+		opts = append(opts, xscraper.WithReload(r.Reload))
+	}
+	return xscraper.NewProfiles(scraperFuncs, opts...)
 }

@@ -84,6 +84,20 @@ func (sc *Controller[T]) Start(ctx context.Context, host component.Host) error {
 	return nil
 }
 
+// Reload updates the configuration of all scrapers that implement component.Reloader.
+// If any scraper's Reload returns an error, Reload returns immediately with that error.
+// Scrapers that do not implement Reloader are skipped.
+func (sc *Controller[T]) Reload(ctx context.Context, cfg component.Config) error {
+	for _, scrp := range sc.Scrapers {
+		if r, ok := component.Component(scrp).(component.Reloader); ok {
+			if err := r.Reload(ctx, cfg); err != nil {
+				return err
+			}
+		}
+	}
+	return nil
+}
+
 // Shutdown the receiver, invoked during service shutdown.
 func (sc *Controller[T]) Shutdown(ctx context.Context) error {
 	// Signal the goroutine to stop.

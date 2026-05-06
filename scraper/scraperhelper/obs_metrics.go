@@ -87,5 +87,9 @@ func wrapObsMetrics(sc scraper.Metrics, receiverID, scraperID component.ID, set 
 		return md, err
 	}
 
-	return scraper.NewMetrics(scraperFuncs, scraper.WithStart(sc.Start), scraper.WithShutdown(sc.Shutdown))
+	opts := []scraper.Option{scraper.WithStart(sc.Start), scraper.WithShutdown(sc.Shutdown)}
+	if r, ok := sc.(component.Reloader); ok {
+		opts = append(opts, scraper.WithReload(r.Reload))
+	}
+	return scraper.NewMetrics(scraperFuncs, opts...)
 }

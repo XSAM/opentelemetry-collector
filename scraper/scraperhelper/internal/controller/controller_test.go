@@ -25,6 +25,13 @@ type mockScraper struct {
 	component.ShutdownFunc
 }
 
+// reloadableMockScraper implements component.Component and component.Reloader for testing.
+type reloadableMockScraper struct {
+	component.StartFunc
+	component.ShutdownFunc
+	component.ReloadFunc
+}
+
 func nopScrapeFunc(context.Context, *Controller[component.Component]) error {
 	return nil
 }
@@ -346,4 +353,96 @@ func TestScrapeFuncReturnsError(t *testing.T) {
 	ctrl := newTestController(t, cfg, scrapeFunc)
 
 	assert.ErrorIs(t, ctrl.scrapeFunc(context.Background(), ctrl), scrapeErr)
+}
+
+func TestReloadScrapers(t *testing.T) {
+	t.Parallel()
+
+	var reloadOrder []int
+	cfg := &ControllerConfig{CollectionInterval: time.Minute}
+	ctrl := newTestController(t, cfg, nopScrapeFunc,
+		&reloadableMockScraper{ReloadFunc: component.ReloadFunc(func(context.Context, component.Config) error {
+			reloadOrder = append(reloadOrder, 1)
+			return nil
+		})},
+		&reloadableMockScraper{ReloadFunc: component.ReloadFunc(func(context.Context, component.Config) error {
+			reloadOrder = append(reloadOrder, 2)
+			return nil
+		})},
+	)
+
+	require.NoError(t, ctrl.Start(context.Background(), componenttest.NewNopHost()))
+	require.NoError(t, ctrl.Reload(context.Background(), nil))
+	assert.Equal(t, []int{1, 2}, reloadOrder)
+	require.NoError(t, ctrl.Shutdown(context.Background()))
+}
+
+func TestReloadScraperError(t *testing.T) {
+	t.Parallel()
+
+	errReload := errors.New("reload failed")
+	cfg := &ControllerConfig{CollectionInterval: time.Minute}
+	ctrl := newTestController(t, cfg, nopScrapeFunc,
+		&reloadableMockScraper{ReloadFunc: component.ReloadFunc(func(context.Context, component.Config) error {
+			return errReload
+		})},
+	)
+
+	require.NoError(t, ctrl.Start(context.Background(), componenttest.NewNopHost()))
+	err := ctrl.Reload(context.Background(), nil)
+	require.ErrorIs(t, err, errReload)
+	require.NoError(t, ctrl.Shutdown(context.Background()))
+}
+
+func TestReloadStopsOnFirstError(t *testing.T) {
+	t.Parallel()
+
+	errReload := errors.New("reload failed")
+	var reloadedSecond bool
+	cfg := &ControllerConfig{CollectionInterval: time.Minute}
+	ctrl := newTestController(t, cfg, nopScrapeFunc,
+		&reloadableMockScraper{ReloadFunc: component.ReloadFunc(func(context.Context, component.Config) error {
+			return errReload
+		})},
+		&reloadableMockScraper{ReloadFunc: component.ReloadFunc(func(context.Context, component.Config) error {
+			reloadedSecond = true
+			return nil
+		})},
+	)
+
+	require.NoError(t, ctrl.Start(context.Background(), componenttest.NewNopHost()))
+	err := ctrl.Reload(context.Background(), nil)
+	require.ErrorIs(t, err, errReload)
+	assert.False(t, reloadedSecond)
+	require.NoError(t, ctrl.Shutdown(context.Background()))
+}
+
+func TestReloadSkipsNonReloaderScrapers(t *testing.T) {
+	t.Parallel()
+
+	var reloaded bool
+	cfg := &ControllerConfig{CollectionInterval: time.Minute}
+	ctrl := newTestController(t, cfg, nopScrapeFunc,
+		&mockScraper{},
+		&reloadableMockScraper{ReloadFunc: component.ReloadFunc(func(context.Context, component.Config) error {
+			reloaded = true
+			return nil
+		})},
+	)
+
+	require.NoError(t, ctrl.Start(context.Background(), componenttest.NewNopHost()))
+	require.NoError(t, ctrl.Reload(context.Background(), nil))
+	assert.True(t, reloaded)
+	require.NoError(t, ctrl.Shutdown(context.Background()))
+}
+
+func TestReloadNoScrapers(t *testing.T) {
+	t.Parallel()
+
+	cfg := &ControllerConfig{CollectionInterval: time.Minute}
+	ctrl := newTestController(t, cfg, nopScrapeFunc)
+
+	require.NoError(t, ctrl.Start(context.Background(), componenttest.NewNopHost()))
+	require.NoError(t, ctrl.Reload(context.Background(), nil))
+	require.NoError(t, ctrl.Shutdown(context.Background()))
 }
