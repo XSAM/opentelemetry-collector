@@ -118,7 +118,7 @@ func (pctx *printContext) printConfigData(data map[string]any) error {
 	return fmt.Errorf("unrecognized print format: %s", format)
 }
 
-func (pctx *printContext) getPrintableConfig() (any, error) {
+func (pctx *printContext) getPrintableConfig() (_ any, retErr error) {
 	var factories Factories
 	if pctx.set.Factories != nil {
 		var err error
@@ -132,6 +132,11 @@ func (pctx *printContext) getPrintableConfig() (any, error) {
 	if err != nil {
 		return nil, fmt.Errorf("failed to create config provider: %w", err)
 	}
+	defer func() {
+		if err := configProvider.Shutdown(pctx.cmd.Context()); err != nil && retErr == nil {
+			retErr = fmt.Errorf("failed to shutdown config provider: %w", err)
+		}
+	}()
 
 	cfg, err := configProvider.Get(pctx.cmd.Context(), factories)
 	if err != nil {

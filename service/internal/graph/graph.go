@@ -381,6 +381,43 @@ func (g *Graph) nextConsumers(nodeID int64) []baseConsumer {
 	return nexts
 }
 
+// ComponentSnapshot groups live component instances by kind, keyed by
+// component.ID. A component that appears in multiple pipelines is
+// deduplicated — instances are shared across pipelines.
+type ComponentSnapshot struct {
+	Receivers  map[component.ID]component.Component
+	Processors map[component.ID]component.Component
+	Exporters  map[component.ID]component.Component
+	Connectors map[component.ID]component.Component
+}
+
+// Components returns a snapshot of every component instance in the graph.
+// Capabilities and fanout nodes are excluded — only user-configured
+// components (receivers, processors, exporters, connectors) are returned.
+// A component that appears in multiple pipelines is deduplicated.
+func (g *Graph) Components() ComponentSnapshot {
+	snap := ComponentSnapshot{
+		Receivers:  map[component.ID]component.Component{},
+		Processors: map[component.ID]component.Component{},
+		Exporters:  map[component.ID]component.Component{},
+		Connectors: map[component.ID]component.Component{},
+	}
+	nodes := g.componentGraph.Nodes()
+	for nodes.Next() {
+		switch v := nodes.Node().(type) {
+		case *receiverNode:
+			snap.Receivers[v.componentID] = v.Component
+		case *processorNode:
+			snap.Processors[v.componentID] = v.Component
+		case *exporterNode:
+			snap.Exporters[v.componentID] = v.Component
+		case *connectorNode:
+			snap.Connectors[v.componentID] = v.Component
+		}
+	}
+	return snap
+}
+
 // A node-based representation of a pipeline configuration.
 type pipelineNodes struct {
 	// Use map to assist with deduplication of connector instances.

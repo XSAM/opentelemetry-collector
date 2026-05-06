@@ -344,6 +344,14 @@ func (srv *Service) Logger() *zap.Logger {
 	return srv.telemetrySettings.Logger
 }
 
+// Components returns a snapshot of every live component instance in the
+// service, keyed by component.ID and grouped by kind. It is used by the
+// collector's hot-reload path to drive in-place configuration updates via
+// component.Reloader without tearing down the pipeline graph.
+func (srv *Service) Components() graph.ComponentSnapshot {
+	return srv.host.Pipelines.Components()
+}
+
 // Validate verifies the graph by calling the internal graph.Build.
 func Validate(ctx context.Context, set Settings, cfg Config) error {
 	tel := component.TelemetrySettings{

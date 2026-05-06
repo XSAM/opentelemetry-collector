@@ -265,6 +265,11 @@ func (col *Collector) setupConfigurationComponents(ctx context.Context) error {
 }
 
 func (col *Collector) reloadConfiguration(ctx context.Context) error {
+	if col.tryReloadInPlace(ctx) {
+		col.service.Logger().Info("Config updated, reloaded components in place")
+		return nil
+	}
+
 	col.service.Logger().Warn("Config updated, restart service")
 	col.setCollectorState(StateClosing)
 
@@ -277,6 +282,74 @@ func (col *Collector) reloadConfiguration(ctx context.Context) error {
 	}
 
 	return nil
+}
+
+// tryReloadInPlace attempts to hot-reload every live component with its new
+// configuration by calling component.Reloader.Reload. It returns true if the
+// set of component instances is unchanged (no adds, removes, or type changes)
+// and no Reload call errored. Components that do not implement Reloader are
+// skipped — any config change they need will not take effect until a restart.
+// Any Reload error returns false so the caller falls back to a full
+// stop/rebuild.
+func (col *Collector) tryReloadInPlace(ctx context.Context) bool {
+	factories, err := col.set.Factories()
+	if err != nil {
+		return false
+	}
+	newCfg, err := col.configProvider.Get(ctx, factories)
+	if err != nil {
+		return false
+	}
+	if err := xconfmap.Validate(newCfg); err != nil {
+		return false
+	}
+
+	snap := col.service.Components()
+
+	// Extensions are out of scope — they live outside the pipeline graph.
+	// Bail if the new config adds or removes any, to keep the decision simple.
+	kinds := []struct {
+		name    string
+		live    map[component.ID]component.Component
+		configs map[component.ID]component.Config
+	}{
+		{"receivers", snap.Receivers, newCfg.Receivers},
+		{"processors", snap.Processors, newCfg.Processors},
+		{"exporters", snap.Exporters, newCfg.Exporters},
+		{"connectors", snap.Connectors, newCfg.Connectors},
+	}
+	for _, k := range kinds {
+		if len(k.live) != len(k.configs) {
+			return false
+		}
+		for id := range k.live {
+			if _, ok := k.configs[id]; !ok {
+				return false
+			}
+		}
+	}
+
+	// TODO: pipeline topology changes are not detected here. A same-id,
+	// same-type component that moved between pipelines would still be
+	// reloaded in place, which is incorrect. Fold in a pipeline-wiring diff
+	// before relying on this beyond credential-rotation cases.
+
+	for _, k := range kinds {
+		for id, comp := range k.live {
+			r, ok := comp.(component.Reloader)
+			if !ok {
+				col.service.Logger().Debug("Component does not implement Reloader, skipping in-place reload",
+					zap.String("kind", k.name), zap.String("component", id.String()))
+				continue
+			}
+			if err := r.Reload(ctx, k.configs[id]); err != nil {
+				col.service.Logger().Warn("Reload failed, falling back to restart",
+					zap.String("kind", k.name), zap.String("component", id.String()), zap.Error(err))
+				return false
+			}
+		}
+	}
+	return true
 }
 
 func (col *Collector) DryRun(ctx context.Context) error {

@@ -8,6 +8,7 @@ import (
 	"os"
 	"path/filepath"
 	"testing"
+	"time"
 
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
@@ -98,4 +99,39 @@ func absolutePath(t *testing.T, relativePath string) string {
 
 func createProvider() confmap.Provider {
 	return NewFactory().Create(confmaptest.NewNopProviderSettings())
+}
+
+func TestWatchFileModifications(t *testing.T) {
+	dir := t.TempDir()
+	path := filepath.Join(dir, "config.yaml")
+	require.NoError(t, os.WriteFile(path, []byte("key: original\n"), 0o600))
+
+	events := make(chan *confmap.ChangeEvent, 4)
+	fp := createProvider()
+	t.Cleanup(func() { require.NoError(t, fp.Shutdown(context.Background())) })
+
+	_, err := fp.Retrieve(context.Background(), fileSchemePrefix+path, func(e *confmap.ChangeEvent) { events <- e })
+	require.NoError(t, err)
+
+	require.NoError(t, os.WriteFile(path, []byte("key: updated\n"), 0o600))
+
+	select {
+	case ev := <-events:
+		require.NoError(t, ev.Error)
+	case <-time.After(2 * time.Second):
+		t.Fatal("expected change event after modifying watched file")
+	}
+}
+
+func TestWatchNilCallbackDoesNotWatch(t *testing.T) {
+	dir := t.TempDir()
+	path := filepath.Join(dir, "config.yaml")
+	require.NoError(t, os.WriteFile(path, []byte("key: value\n"), 0o600))
+
+	fp := createProvider()
+	_, err := fp.Retrieve(context.Background(), fileSchemePrefix+path, nil)
+	require.NoError(t, err)
+
+	assert.Empty(t, fp.(*provider).watches)
+	require.NoError(t, fp.Shutdown(context.Background()))
 }
