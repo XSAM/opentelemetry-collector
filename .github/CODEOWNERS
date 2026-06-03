@@ -33,6 +33,7 @@ component/componentstatus/                             @open-telemetry/collector
 component/componenttest/                               @open-telemetry/collector-approvers
 config/configauth/                                     @open-telemetry/collector-approvers
 config/configcompression/                              @open-telemetry/collector-approvers
+config/configcredentials/                              @open-telemetry/collector-approvers
 config/configgrpc/                                     @open-telemetry/collector-approvers
 config/confighttp/                                     @open-telemetry/collector-approvers
 config/confighttp/xconfighttp/                         @open-telemetry/collector-approvers
