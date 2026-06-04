@@ -87,24 +87,6 @@ func (NopWatcher) Watch(context.Context, func(*Credential)) (func(), error) {
 	return func() {}, nil
 }
 
-// ConnInfo carries the consuming component's connection inputs to a
-// ProviderFactory at build time. Because the Authentication block is embedded in
-// the consumer's own config, the consumer already knows these values and passes
-// them to the factory, so the Provider needs no per-call target parameter on
-// GetCredential. For example, an AWS IAM provider needs the database endpoint and
-// username to mint an RDS auth token.
-type ConnInfo struct {
-	// Endpoint is the connection endpoint the credential is for (e.g. "host:port").
-	Endpoint string
-
-	// Username is the consumer's configured username, used by providers that need
-	// it as a minting input (e.g. the dbUser for an RDS auth token).
-	Username string
-
-	// prevent unkeyed literal initialization
-	_ struct{}
-}
-
 // ProviderSettings is passed to a ProviderFactory when it builds a Provider.
 type ProviderSettings struct {
 	// ID is the configured auth-type identity (its Type as a component.ID).
@@ -134,9 +116,10 @@ type ProviderFactory interface {
 	// which the inline Authentication block is unmarshaled.
 	CreateDefaultConfig() component.Config
 
-	// CreateProvider builds a Provider from the unmarshaled sub-config and the
-	// consumer's connection inputs.
-	CreateProvider(set ProviderSettings, cfg component.Config, conn ConnInfo) (Provider, error)
+	// CreateProvider builds a Provider from the unmarshaled sub-config. Any
+	// connection inputs a provider needs (such as a database endpoint or username
+	// for token minting) come from the factory's own sub-config.
+	CreateProvider(set ProviderSettings, cfg component.Config) (Provider, error)
 }
 
 // newProviderFactoryMap builds a Type()-keyed map from an explicit slice of

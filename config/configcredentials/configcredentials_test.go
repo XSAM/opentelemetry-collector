@@ -47,12 +47,11 @@ func (w *watchingProvider) trigger(c *Credential) {
 	}
 }
 
-// fakeFactory is a ProviderFactory whose CreateProvider records the ConnInfo and
-// config it received.
+// fakeFactory is a ProviderFactory whose CreateProvider records the config it
+// received.
 type fakeFactory struct {
-	typ     string
-	gotConn ConnInfo
-	gotCfg  *fakeFactoryConfig
+	typ    string
+	gotCfg *fakeFactoryConfig
 }
 
 type fakeFactoryConfig struct {
@@ -63,8 +62,7 @@ func (f *fakeFactory) Type() string { return f.typ }
 
 func (f *fakeFactory) CreateDefaultConfig() component.Config { return &fakeFactoryConfig{} }
 
-func (f *fakeFactory) CreateProvider(_ ProviderSettings, cfg component.Config, conn ConnInfo) (Provider, error) {
-	f.gotConn = conn
+func (f *fakeFactory) CreateProvider(_ ProviderSettings, cfg component.Config) (Provider, error) {
 	f.gotCfg = cfg.(*fakeFactoryConfig)
 	return &fakeProvider{cred: &Credential{Secret: "tok"}}, nil
 }

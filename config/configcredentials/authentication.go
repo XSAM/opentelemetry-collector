@@ -53,12 +53,12 @@ func (a Authentication) Validate() error {
 }
 
 // Resolve selects the configured auth type's factory from the supplied set,
-// unmarshals the sub-config into the factory's config, and builds the Provider
-// with the consumer's connection inputs. It returns (nil, nil) when no auth type
-// is configured (opt-out). It returns an error when more than one auth type is
-// set, when the configured type matches no factory in the set, or when the
-// factory set itself is malformed (duplicate or empty types).
-func (a Authentication) Resolve(set ProviderSettings, factories []ProviderFactory, conn ConnInfo) (Provider, error) {
+// unmarshals the sub-config into the factory's config, and builds the Provider.
+// It returns (nil, nil) when no auth type is configured (opt-out). It returns an
+// error when more than one auth type is set, when the configured type matches no
+// factory in the set, or when the factory set itself is malformed (duplicate or
+// invalid types).
+func (a Authentication) Resolve(set ProviderSettings, factories []ProviderFactory) (Provider, error) {
 	if err := a.Validate(); err != nil {
 		return nil, err
 	}
@@ -92,7 +92,7 @@ func (a Authentication) Resolve(set ProviderSettings, factories []ProviderFactor
 		return nil, fmt.Errorf("authentication: invalid auth type %q: %w", authType, err)
 	}
 	set.ID = component.NewID(authComponentType)
-	return factory.CreateProvider(set, cfg, conn)
+	return factory.CreateProvider(set, cfg)
 }
 
 // single returns the sole configured auth type and its sub-config as a string
