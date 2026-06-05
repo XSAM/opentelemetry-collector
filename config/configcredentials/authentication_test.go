@@ -29,20 +29,20 @@ func (f *erroringFactory) CreateProvider(ProviderSettings, component.Config) (Pr
 
 func TestAuthentication_IsEmpty(t *testing.T) {
 	assert.True(t, Authentication{}.IsEmpty())
-	assert.False(t, Authentication{Settings: map[string]any{"aws_iam": map[string]any{}}}.IsEmpty())
+	assert.False(t, Authentication{ProviderConfigs: map[string]any{"aws_iam": map[string]any{}}}.IsEmpty())
 }
 
 func TestAuthentication_Validate(t *testing.T) {
 	require.NoError(t, Authentication{}.Validate())
-	require.NoError(t, Authentication{Settings: map[string]any{"aws_iam": nil}}.Validate())
+	require.NoError(t, Authentication{ProviderConfigs: map[string]any{"aws_iam": nil}}.Validate())
 
-	err := Authentication{Settings: map[string]any{"aws_iam": nil, "file": nil}}.Validate()
+	err := Authentication{ProviderConfigs: map[string]any{"aws_iam": nil, "file": nil}}.Validate()
 	require.ErrorIs(t, err, errMultipleAuthTypes)
 }
 
 func TestAuthentication_Resolve_SingleKey(t *testing.T) {
 	f := &fakeFactory{typ: "aws_iam"}
-	auth := Authentication{Settings: map[string]any{
+	auth := Authentication{ProviderConfigs: map[string]any{
 		"aws_iam": map[string]any{"region": "ap-northeast-2"},
 	}}
 
@@ -62,13 +62,13 @@ func TestAuthentication_Resolve_OptOutWhenEmpty(t *testing.T) {
 }
 
 func TestAuthentication_Resolve_UnknownType(t *testing.T) {
-	auth := Authentication{Settings: map[string]any{"vault": map[string]any{}}}
+	auth := Authentication{ProviderConfigs: map[string]any{"vault": map[string]any{}}}
 	_, err := auth.Resolve(ProviderSettings{}, []ProviderFactory{&fakeFactory{typ: "aws_iam"}})
 	require.ErrorIs(t, err, errUnknownAuthType)
 }
 
 func TestAuthentication_Resolve_MultipleTypes(t *testing.T) {
-	auth := Authentication{Settings: map[string]any{
+	auth := Authentication{ProviderConfigs: map[string]any{
 		"aws_iam": map[string]any{},
 		"vault":   map[string]any{},
 	}}
@@ -77,7 +77,7 @@ func TestAuthentication_Resolve_MultipleTypes(t *testing.T) {
 }
 
 func TestAuthentication_Resolve_DuplicateFactories(t *testing.T) {
-	auth := Authentication{Settings: map[string]any{"aws_iam": map[string]any{}}}
+	auth := Authentication{ProviderConfigs: map[string]any{"aws_iam": map[string]any{}}}
 	_, err := auth.Resolve(ProviderSettings{}, []ProviderFactory{
 		&fakeFactory{typ: "aws_iam"},
 		&fakeFactory{typ: "aws_iam"},
@@ -88,7 +88,7 @@ func TestAuthentication_Resolve_DuplicateFactories(t *testing.T) {
 func TestAuthentication_Resolve_NoBody(t *testing.T) {
 	// "aws_iam:" with no sub-config still resolves; the factory gets its default config.
 	f := &fakeFactory{typ: "aws_iam"}
-	auth := Authentication{Settings: map[string]any{"aws_iam": nil}}
+	auth := Authentication{ProviderConfigs: map[string]any{"aws_iam": nil}}
 	p, err := auth.Resolve(ProviderSettings{}, []ProviderFactory{f})
 	require.NoError(t, err)
 	require.NotNil(t, p)
@@ -98,7 +98,7 @@ func TestAuthentication_Resolve_NoBody(t *testing.T) {
 
 func TestAuthentication_Resolve_CreateProviderError(t *testing.T) {
 	sentinel := errors.New("mint failed")
-	auth := Authentication{Settings: map[string]any{"aws_iam": map[string]any{}}}
+	auth := Authentication{ProviderConfigs: map[string]any{"aws_iam": map[string]any{}}}
 	_, err := auth.Resolve(ProviderSettings{}, []ProviderFactory{
 		&erroringFactory{typ: "aws_iam", err: sentinel},
 	})
@@ -107,7 +107,7 @@ func TestAuthentication_Resolve_CreateProviderError(t *testing.T) {
 
 func TestAuthentication_Resolve_UnmarshalError(t *testing.T) {
 	// region is a string field; an int value fails to unmarshal.
-	auth := Authentication{Settings: map[string]any{
+	auth := Authentication{ProviderConfigs: map[string]any{
 		"aws_iam": map[string]any{"region": map[string]any{"nested": "notastring"}},
 	}}
 	_, err := auth.Resolve(ProviderSettings{}, []ProviderFactory{&fakeFactory{typ: "aws_iam"}})
@@ -117,7 +117,7 @@ func TestAuthentication_Resolve_UnmarshalError(t *testing.T) {
 
 func TestAuthentication_Resolve_InvalidFactoryType(t *testing.T) {
 	// A factory whose Type() is not a valid component type must error, not panic.
-	auth := Authentication{Settings: map[string]any{"aws_iam": map[string]any{}}}
+	auth := Authentication{ProviderConfigs: map[string]any{"aws_iam": map[string]any{}}}
 	_, err := auth.Resolve(ProviderSettings{}, []ProviderFactory{&fakeFactory{typ: "aws-iam"}})
 	require.ErrorIs(t, err, errInvalidFactoryType)
 }

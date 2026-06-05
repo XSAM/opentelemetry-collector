@@ -28,26 +28,27 @@ var (
 // set the consumer supplies to Resolve. Resolve unmarshals the sub-config into
 // the chosen factory's config and builds the Provider.
 type Authentication struct {
-	// Settings holds each configured auth type keyed by its name. The ",remain"
-	// tag captures every key in the authentication block; exactly one is expected.
-	// It is exported because mapstructure cannot populate unexported fields; treat
+	// ProviderConfigs holds the inline provider config, keyed by auth-type name.
+	// The ",remain" tag captures every key in the authentication block; exactly
+	// one is expected. It holds raw config, not Provider instances — it is
+	// exported only because mapstructure cannot populate unexported fields. Treat
 	// it as read-only and prefer the IsEmpty/Validate/Resolve methods.
-	Settings map[string]any `mapstructure:",remain"`
+	ProviderConfigs map[string]any `mapstructure:",remain"`
 }
 
 // IsEmpty reports whether no auth type is configured. A component treats an empty
 // Authentication as "credentials not in use" and falls back to its existing
 // static credential fields — the framework is opt-in.
 func (a Authentication) IsEmpty() bool {
-	return len(a.Settings) == 0
+	return len(a.ProviderConfigs) == 0
 }
 
 // Validate fails when more than one auth type is configured. Zero is allowed
 // (opt-out); the unknown-type case is reported by Resolve, which is the only
 // place the factory set is known.
 func (a Authentication) Validate() error {
-	if len(a.Settings) > 1 {
-		return fmt.Errorf("%w, got %d", errMultipleAuthTypes, len(a.Settings))
+	if len(a.ProviderConfigs) > 1 {
+		return fmt.Errorf("%w, got %d", errMultipleAuthTypes, len(a.ProviderConfigs))
 	}
 	return nil
 }
@@ -99,7 +100,7 @@ func (a Authentication) Resolve(set ProviderSettings, factories []ProviderFactor
 // map. Callers must ensure exactly one key is set (Validate + non-empty). The
 // sub-config is nil when the key has no value (e.g. "aws_iam:" with no body).
 func (a Authentication) single() (string, map[string]any) {
-	for k, v := range a.Settings {
+	for k, v := range a.ProviderConfigs {
 		sub, _ := v.(map[string]any)
 		return k, sub
 	}
