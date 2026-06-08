@@ -17,32 +17,61 @@ expire (an AWS RDS IAM token lives ~15 minutes) or change out of band (a rotated
 `.pgpass` file). That shape does not fit the transport interfaces, so this is a
 sibling `config/*` package, not an extension of `configauth`.
 
-## Why a `config/` package, not an extension
+## How a provider is declared and selected
 
-A credential provider is a `ProviderFactory` selected by an inline auth-type key
-in a component's `authentication` config block:
+A credential provider is a Collector **extension** that also implements
+`ProviderFactory`. It is declared once (and listed in `service.extensions`), then
+each component selects it by an inline provider-type key in its `credentials`
+block — the key matches the extension's component type:
 
 ```yaml
+extensions:
+  aws_iam:                       # declared once, config-less
+
 receivers:
-  postgresql:
-    endpoint: localhost:5432
+  postgresql/this:
+    endpoint: this-db:5432
     username: monitor
-    authentication:
-      aws_iam:
+    credentials:
+      aws_iam:                   # inline, receiver-owned config
         region: us-east-1
+        endpoint: this-db:5432
+        db_user: monitor
+  postgresql/another:
+    endpoint: another-db:5432
+    username: reader
+    credentials:
+      aws_iam:
+        region: us-east-2
+        endpoint: another-db:5432
+        db_user: reader
+
+service:
+  extensions: [aws_iam]
 ```
 
-Factories are supplied to the consuming component as an explicit
-`[]ProviderFactory` — there is no global registry and no `init()`-based
-registration. This mirrors how `confmap.ProviderFactory` is supplied and matches
-the core convention of assembling components from an explicit set rather than by
-import side effect. A provider is therefore *not* a standalone Collector
-extension referenced by ID; it is a registered factory keyed by its inline config
-key, built directly from that sub-config.
+The extension holds **no config and no state** — its `Start`/`Shutdown` are
+no-ops. It exists only so any component can discover the provider type via the
+host extension map. The per-connection config lives in the consuming component's
+`credentials` block; the component unmarshals it and calls the factory's
+`CreateProvider`, which returns a `Provider` bound to that component's config. The
+call is stateless, so one declared extension serves many components with different
+configs.
+
+This means:
+
+- A provider type is **registered once** (one extension in the collector build);
+  any receiver can use it with no per-receiver provider list to maintain, and new
+  providers require no receiver code changes.
+- Databases that do **not** share credentials (the common case) each keep their own
+  inline config next to their receiver — one extension declaration covers all of
+  them, with no per-database extension instance.
+- Resolution mirrors `config/configauth`: the component finds the provider in
+  `host.GetExtensions()` at `Start()`, not via an `init()` registry.
 
 ## The credential
 
-Every provider returns the same fixed value, regardless of auth type:
+Every provider returns the same fixed value, regardless of provider type:
 
 ```go
 type Credential struct {
@@ -87,8 +116,9 @@ configures its driver for integrated auth directly.
 
 ## Implementing a provider
 
-A provider is two pieces: a `Provider` that returns credentials, and a
-`ProviderFactory` that builds it from config.
+A provider is a Collector extension whose component implements `ProviderFactory`
+in addition to `extension.Extension`. The extension is config-less; the factory
+builds a `Provider` from the consumer's inline config.
 
 ```go
 type Provider interface {

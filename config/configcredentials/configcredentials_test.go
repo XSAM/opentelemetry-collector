@@ -47,10 +47,10 @@ func (w *watchingProvider) trigger(c *Credential) {
 	}
 }
 
-// fakeFactory is a ProviderFactory whose CreateProvider records the config it
-// received.
+// fakeFactory is a credentials provider extension: it implements both
+// component.Component (so it can live in the host extension map) and
+// ProviderFactory. CreateProvider records the config it received.
 type fakeFactory struct {
-	typ    string
 	gotCfg *fakeFactoryConfig
 }
 
@@ -58,9 +58,10 @@ type fakeFactoryConfig struct {
 	Region string `mapstructure:"region"`
 }
 
-func (f *fakeFactory) Type() string { return f.typ }
+func (*fakeFactory) Start(context.Context, component.Host) error { return nil }
+func (*fakeFactory) Shutdown(context.Context) error              { return nil }
 
-func (f *fakeFactory) CreateDefaultConfig() component.Config { return &fakeFactoryConfig{} }
+func (*fakeFactory) CreateDefaultConfig() component.Config { return &fakeFactoryConfig{} }
 
 func (f *fakeFactory) CreateProvider(_ ProviderSettings, cfg component.Config) (Provider, error) {
 	f.gotCfg = cfg.(*fakeFactoryConfig)
@@ -119,25 +120,12 @@ func TestCredential_NotAfterNilVsSet(t *testing.T) {
 	assert.Equal(t, exp, *withExpiry.NotAfter)
 }
 
-func TestNewProviderFactoryMap(t *testing.T) {
-	f := &fakeFactory{typ: "aws_iam"}
-	m, err := newProviderFactoryMap([]ProviderFactory{f})
-	require.NoError(t, err)
-	assert.Same(t, f, m["aws_iam"])
-}
-
-func TestNewProviderFactoryMap_Duplicate(t *testing.T) {
-	_, err := newProviderFactoryMap([]ProviderFactory{
-		&fakeFactory{typ: "aws_iam"},
-		&fakeFactory{typ: "aws_iam"},
-	})
-	require.ErrorIs(t, err, errDuplicateFactory)
-}
-
-func TestNewProviderFactoryMap_InvalidType(t *testing.T) {
-	// Empty and malformed type strings are both rejected by component.NewType.
-	for _, typ := range []string{"", "aws-iam", "1aws"} {
-		_, err := newProviderFactoryMap([]ProviderFactory{&fakeFactory{typ: typ}})
-		require.ErrorIs(t, err, errInvalidFactoryType, "type %q should be rejected", typ)
-	}
+func TestFactory_ImplementsExtensionAndProviderFactory(t *testing.T) {
+	// A credentials provider is both a component (it lives in the host extension
+	// map) and a ProviderFactory (the consumer builds a Provider from it).
+	var f any = &fakeFactory{}
+	_, isComponent := f.(component.Component)
+	_, isFactory := f.(ProviderFactory)
+	assert.True(t, isComponent, "provider extension must implement component.Component")
+	assert.True(t, isFactory, "provider extension must implement ProviderFactory")
 }

@@ -8,28 +8,23 @@
 // database receiver) at connection-open time, with support for credentials that
 // expire or change out-of-band.
 //
-// A credential provider is a ProviderFactory selected by an inline auth-type key
-// in a component's Authentication config block. Factories are supplied to the
-// component as an explicit slice; there is no global registry and no init()-based
-// registration.
+// A credential provider is a Collector extension that also implements
+// ProviderFactory. It is declared once in the extensions block; a component
+// selects it by the inline provider-type key in its credentials config block,
+// which matches the extension's component type. The component resolves the
+// factory from the host extension map (see Config.Resolve), mirroring
+// how config/configauth resolves an authenticator extension.
 package configcredentials // import "go.opentelemetry.io/collector/config/configcredentials"
 
 import (
 	"context"
-	"errors"
-	"fmt"
 	"time"
 
 	"go.opentelemetry.io/collector/component"
 )
 
-var (
-	errDuplicateFactory   = errors.New("duplicate credentials provider factory type")
-	errInvalidFactoryType = errors.New("credentials provider factory has an invalid Type()")
-)
-
 // Credential is the fixed value a Provider returns. The same shape is used by
-// every auth type: a credential carries optional material plus an optional
+// every provider type: a credential carries optional material plus an optional
 // expiry, and nothing about how that material should be applied — the consuming
 // component decides that.
 type Credential struct {
@@ -89,7 +84,7 @@ func (NopWatcher) Watch(context.Context, func(*Credential)) (func(), error) {
 
 // ProviderSettings is passed to a ProviderFactory when it builds a Provider.
 type ProviderSettings struct {
-	// ID is the configured auth-type identity (its Type as a component.ID).
+	// ID is the configured provider-type identity (its Type as a component.ID).
 	ID component.ID
 
 	// TelemetrySettings provides the provider with telemetry APIs (logger, tracer,
@@ -103,42 +98,20 @@ type ProviderSettings struct {
 	_ struct{}
 }
 
-// ProviderFactory builds a Provider for one auth type. A factory is identified by
-// its Type (the inline config key, e.g. "aws_iam") and is supplied to a consuming
-// component as one entry in an explicit []ProviderFactory — there is no global
-// registry and no init()-based registration, mirroring confmap.ProviderFactory.
+// ProviderFactory builds a per-consumer Provider from inline config. A credentials
+// provider extension implements this in addition to extension.Extension: the
+// extension is config-less and exists only so consumers can discover the provider
+// type via the host extension map; the actual per-connection config is supplied by
+// the consumer and passed to CreateProvider. The factory holds no per-consumer
+// state, so one extension may build many independent Providers for different
+// consumers concurrently.
 type ProviderFactory interface {
-	// Type returns the auth-type key this factory handles, e.g. "aws_iam". It is
-	// the key used in the inline Authentication config block.
-	Type() string
-
-	// CreateDefaultConfig returns the zero value of this factory's sub-config, into
-	// which the inline Authentication block is unmarshaled.
+	// CreateDefaultConfig returns the zero value of this provider's config, into
+	// which the consumer's inline credentials sub-config is unmarshaled.
 	CreateDefaultConfig() component.Config
 
-	// CreateProvider builds a Provider from the unmarshaled sub-config. Any
-	// connection inputs a provider needs (such as a database endpoint or username
-	// for token minting) come from the factory's own sub-config.
+	// CreateProvider builds a Provider from the unmarshaled config. Any connection
+	// inputs a provider needs (such as a database endpoint or username for token
+	// minting) come from that config.
 	CreateProvider(set ProviderSettings, cfg component.Config) (Provider, error)
-}
-
-// newProviderFactoryMap builds a Type()-keyed map from an explicit slice of
-// factories. It returns an error if two factories share a Type or a factory has
-// a Type that is not a valid component type (the charset/length rules enforced
-// by component.NewType). Validating here means an invalid Type surfaces as an
-// error from the factory set rather than as a panic later in Resolve. There is
-// intentionally no global registry: the consuming component owns the factory set.
-func newProviderFactoryMap(factories []ProviderFactory) (map[string]ProviderFactory, error) {
-	fMap := make(map[string]ProviderFactory, len(factories))
-	for _, f := range factories {
-		t := f.Type()
-		if _, err := component.NewType(t); err != nil {
-			return nil, fmt.Errorf("%w: %q: %w", errInvalidFactoryType, t, err)
-		}
-		if _, ok := fMap[t]; ok {
-			return nil, fmt.Errorf("%w: %q", errDuplicateFactory, t)
-		}
-		fMap[t] = f
-	}
-	return fMap, nil
 }
